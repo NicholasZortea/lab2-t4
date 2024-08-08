@@ -27,7 +27,6 @@ struct _grafo{
     int tam_no;
     int tam_aresta;
     int n_nos;
-    int id_no_atual; //inteiro para identificar os nos, sempre e adicionado e nunca diminui, de forma a nao existir dois nos com o mesmo id
     no** adjacencias;
     aresta* arestas;
     int n_arestas;
@@ -148,6 +147,14 @@ void remove_adjacencia(Grafo self, int origem, int destino){
     }
 }
 
+bool existe_no(Grafo self, int id){
+    for(int i = 0; i < self->n_nos; i++){
+        if(self->adjacencias[i]->id == id){
+            return true;
+        }
+    }
+    return false;
+}
 
 void remove_aresta(Grafo self, int origem, int destino) {
     aresta* atual = self->arestas;
@@ -200,7 +207,10 @@ void grafo_altera_valor_aresta(Grafo self, int origem, int destino, void *pdado)
     aresta* aresta = busca_aresta(self, origem, destino);
     if(aresta == NULL && pdado != NULL){
         //aresta nao existe e precisa ser criada
-        insere_aresta_no_grafo(self, cria_aresta(self, pdado, origem, destino));
+        if(existe_no(self, origem) && existe_no(self, destino)){
+            insere_aresta_no_grafo(self, cria_aresta(self, pdado, origem, destino));
+        }
+        
     } else if(aresta != NULL && pdado == NULL){//deve remover a aresta 
         remove_aresta(self, origem, destino);
     } else if(aresta != NULL && pdado != NULL){//deve alterar o valor da aresta
@@ -229,7 +239,6 @@ Grafo grafo_cria(int tam_no, int tam_aresta){
     g->tam_aresta= tam_aresta;
     g->tam_no=tam_no;
     g->n_nos=0;
-    g->id_no_atual = 0;
     g->n_arestas = 0;
     g->consulta = NULL;
     return g;
@@ -328,9 +337,9 @@ void grafo_destroi(Grafo self){
     free(self);
 }
 
-void remove_lista_adjacencia(int index, Grafo self){
+void remove_lista_adjacencia(int index, Grafo self) {
     no* atual = self->adjacencias[index];
-    while(atual!=NULL){
+    while(atual != NULL) {
         no* tmp = atual;
         atual = atual->next;
         free(tmp->pdado);
@@ -343,10 +352,11 @@ void remove_lista_adjacencia(int index, Grafo self){
 
     self->n_nos--;
     self->adjacencias = (no**)realloc(self->adjacencias, self->n_nos * sizeof(no*));
+    printa_grafo(self);
 }
 
-void remove_no_adjacente(Grafo self, int id){
-      for (int i = 0; i < self->n_nos; i++) {
+void remove_no_adjacente(Grafo self, int id) {
+    for (int i = 0; i < self->n_nos; i++) {
         no* atual = self->adjacencias[i];
         no* prev = NULL;
         while (atual != NULL) {
@@ -368,7 +378,7 @@ void remove_no_adjacente(Grafo self, int id){
     }
 }
 
-void remove_aresta_relacionada(Grafo self, int id){
+void remove_aresta_relacionada(Grafo self, int id) {
     aresta* atual_aresta = self->arestas;
     aresta* prev_aresta = NULL;
     while (atual_aresta != NULL) {
@@ -390,18 +400,45 @@ void remove_aresta_relacionada(Grafo self, int id){
     }
 }
 
-void grafo_remove_no(Grafo self, int id){
-    int index = -1;
+void atualiza_ids_arestas(Grafo self, int id_removid) {
+    aresta* atual = self->arestas;
+    while (atual != NULL) {
+        if(atual->origem>id_removid){
+            atual->origem--;
+        }
+        if(atual->destino>id_removid){
+            atual->destino--;
+        }
+        atual = atual->prox;
+    }
+}
+
+void atualiza_nos(Grafo self, int id_removido){
+    for(int i = id_removido; i < self->n_nos; i ++){
+        self->adjacencias[i]->id-=1;
+    }
     for(int i = 0; i < self->n_nos; i++){
-        if(self->adjacencias[i]->id == id){
-            index = i;
+        no* atual = self->adjacencias[i]->next;
+        while(atual != NULL){
+            if(atual->id>id_removido){
+                atual->id--;
+            }
+            atual = atual->next;
         }
     }
-    if(index != -1){//o no esta presente em um cabecalho das adjacencias
-        remove_lista_adjacencia(index, self);
+}
+
+void grafo_remove_no(Grafo self, int id) {
+    if(id < self->n_nos){
+        remove_lista_adjacencia(id, self);
+        remove_no_adjacente(self, id);
+        remove_aresta_relacionada(self, id);
+
+        atualiza_nos(self, id);
+
+        // Atualiza as arestas com os novos IDs
+        atualiza_ids_arestas(self, id);
     }
-    remove_no_adjacente(self, id);
-    remove_aresta_relacionada(self, id);
 }
 
 void grafo_valor_no(Grafo self, int no, void *pdado){
@@ -435,15 +472,12 @@ void printa_grafo(Grafo self){
     for(int i = 0; i < self->n_nos; i++){
         no* head = self->adjacencias[i];
         while(head != NULL){
-            printf("No id: %d, valor contido: %d -> ", head->id, (*(int*)head->pdado));
+            printf("id: %d -> ", head->id);
             head = head->next;  
         }
         printf("\n");
     }
 }
-
-
-
 
 // inicia uma consulta a arestas que partem do nó origem
 // as próximas chamadas a 'grafo_proxima_aresta' devem retornar os valores correspondentes
@@ -481,16 +515,6 @@ bool consultas_vazias(Grafo self){
     return self->consulta == NULL;
 }
 
-//remove primeira consulta
-// void remove_primeira_consulta(Grafo self){
-//     if (self->consulta != NULL) {
-//         Consulta* primeiro = self->consulta;
-//         self->consulta = primeiro->prox;
-//         free(primeiro->peso_aresta);
-//         free(primeiro);
-//     }
-// }
-
 // retorna a próxima aresta, de acordo com a última consulta iniciada por 
 //   'grafo_arestas_que_partem' ou 'grafo_arestas_que_chegam'
 // o valor do nó vizinho ao nó da consulta deve ser colocado em 'vizinho' (se não for NULL),
@@ -520,36 +544,18 @@ int grafo_insere_no(Grafo self, void* pdado) {
         printf("Erro ao realocar memoria para lista de adjacencias!\n");
         exit(0);
     }
-    self->adjacencias[self->n_nos] = cria_no(self->id_no_atual, pdado, self->tam_no);
+    self->adjacencias[self->n_nos] = cria_no(self->n_nos, pdado, self->tam_no);
     self->n_nos++;
-    self->id_no_atual++;
-    return self->id_no_atual - 1;
-}
-
-bool existe_no(Grafo self, int id){
-    for(int i = 0; i < self->n_nos; i++){
-        if(self->adjacencias[i]->id == id){
-            return true;
-        }
-    }
-    return false;
-}
-
-//preenche o vetor com -1 se o id procurado nao existir mais e com o proprio id se ele ainda existir
-void get_vetor_com_posicoes_corretas(Grafo self, int vetor[]){
-    for(int i = 0; i < self->id_no_atual; i++){
-        vetor[i] = existe_no(self, i) ? i : -1;
-    }
+    return self->n_nos - 1;
 }
 
 bool grafo_tem_ciclo(Grafo self)
 {
   // inicializa um vetor com o grau de entrada dos nós
-  int ge[self->id_no_atual];
-  get_vetor_com_posicoes_corretas(self, ge);
+  int ge[self->n_nos];
+  //get_vetor_com_posicoes_corretas(self, ge);
 
-  for (int no=0; no<self->id_no_atual; no++) {
-    if(ge[no] != -1){ //os nos que tem -1 sao nos que nao existem mais
+  for (int no=0; no<self->n_nos; no++) {
         ge[no] = 0;
         // incrementa o GE do nó para cada aresta que chega nele
         grafo_arestas_que_chegam(self, no);
@@ -557,11 +563,10 @@ bool grafo_tem_ciclo(Grafo self)
         while(grafo_proxima_aresta(self, &vizinho, NULL)){
             ge[no]++;
         }
-    }
   }
   // inicializa uma fila com todos os nós que têm GE 0 (isso poderia ser feito no final do segundo for acima)
   Fila f = fila_cria(sizeof(int));
-  for (int no=0; no<self->id_no_atual; no++) {
+  for (int no=0; no<self->n_nos; no++) {
     if (ge[no] == 0) {
       fila_insere(f, &no);
     }
@@ -595,11 +600,10 @@ bool grafo_tem_ciclo(Grafo self)
 // quem chama esta função é responsável por destruir a fila.
 Fila grafo_ordem_topologica(Grafo self){
     // inicializa um vetor com o grau de entrada dos nós
-  int ge[self->id_no_atual];
-  get_vetor_com_posicoes_corretas(self, ge);
+  int ge[self->n_nos];
+  //get_vetor_com_posicoes_corretas(self, ge);
 
-  for (int no=0; no<self->id_no_atual; no++) {
-    if(ge[no] != -1){ //os nos que tem -1 sao nos que nao existem mais
+  for (int no=0; no<self->n_nos; no++) {
         ge[no] = 0;
         // incrementa o GE do nó para cada aresta que chega nele
         grafo_arestas_que_chegam(self, no);
@@ -608,10 +612,9 @@ Fila grafo_ordem_topologica(Grafo self){
             ge[no]++;
         }
     }
-  }
   // inicializa uma fila com todos os nós que têm GE 0
   Fila f = fila_cria(sizeof(int));
-  for (int no=0; no<self->id_no_atual; no++) {
+  for (int no=0; no<self->n_nos; no++) {
     if (ge[no] == 0) {
       fila_insere(f, &no);
     }
@@ -641,7 +644,7 @@ Fila grafo_ordem_topologica(Grafo self){
   fila_destroi(f);
   if (ordenados != self->n_nos) {
     // o grafo tem ciclo, não tem ordem topológica
-    fila_destroi(ordem);
+    
   }
   return ordem;
 }
